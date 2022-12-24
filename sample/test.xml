@@ -21,21 +21,21 @@
 
   <script name="LOCALHOST.CSH" cmd="%i %f" interp="SH">
     <![CDATA[
-      which perl 
+      which csh 
     ]]>
   </script>
 
   <script name="LOCALHOST.PERL" cmd="%i %f" interp="SH">
     <![CDATA[
-      which csh
+      which perl 
     ]]>
   </script>
 
 
   <!-- interactive input from user -->
   <input name="LOCALHOST.SH"  msg="Choose Bourne shell [%LOCALHOST.SH%]:"/>
-  <input name="LOCALHOST.CSH" msg="Choose perl [%LOCALHOST.CSH%]:"/>
-  <input name="LOCALHOST.PERL" msg="Choose csh [%LOCALHOST.PERL%]:"/>
+  <input name="LOCALHOST.CSH" msg="Choose csh [%LOCALHOST.CSH%]:"/>
+  <input name="LOCALHOST.PERL" msg="Choose perl [%LOCALHOST.PERL%]:"/>
   
   <script name="PLATFORM.UNAME" cmd="%i %f" interp="SH">
     <![CDATA[

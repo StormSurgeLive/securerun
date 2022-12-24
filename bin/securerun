@@ -122,37 +122,42 @@ addToExtraOps( 'STDOUT', '' );
 
 my %CMDLINEOPTS = ();
 my $CMDLINEOPTS = \%CMDLINEOPTS;
-$CMDLINEOPTS->{CHECKMACRO}         = 'none';
-$CMDLINEOPTS->{SAVERUNFILE}        = '';
-$CMDLINEOPTS->{NOSPLASH}           = 0;
-$CMDLINEOPTS->{NOINPUTTAG}         = 0;
-$CMDLINEOPTS->{SHOWCOMMENTS}       = 0;
-$CMDLINEOPTS->{SHOWTEXT}           = 0;
-$CMDLINEOPTS->{SHOWVERSION}        = 0;
-$CMDLINEOPTS->{CLEAR}              = 0;
-$CMDLINEOPTS->{DONTPROCESSRUNFILE} = 0;
-$CMDLINEOPTS->{INTERACTIVE}        = 0;
+$CMDLINEOPTS->{checkmacro}         = 'none';
+$CMDLINEOPTS->{saverunfile}        = undef;
+$CMDLINEOPTS->{nosplash}           = undef;
+$CMDLINEOPTS->{noinputtag}         = undef;
+$CMDLINEOPTS->{showcomments}       = undef;
+$CMDLINEOPTS->{showtext}           = undef;
+$CMDLINEOPTS->{showversion}        = undef;
+$CMDLINEOPTS->{clear}              = undef;
+$CMDLINEOPTS->{dontprocesrunfile}  = undef;
+$CMDLINEOPTS->{i}                  = undef;
+$SECURERUN->{LOCALHOST}            = 'localhost';
 
 my $v = 0;
 
 GetOptions(
-    "c"                  => \$CMDLINEOPTS->{CLEAR},
+    "clear|c"            => \$CMDLINEOPTS->{clear},
+    "i"                  => \$CMDLINEOPTS->{i},
+    "checkmacro=s"       => \$CMDLINEOPTS->{checkmacro},
+    "saverunfile=s"      => \$CMDLINEOPTS->{saverunfile},
+    "dontprocessrunfile" => \$CMDLINEOPTS->{dontprocesrunfile},
+    "noinput"            => \$CMDLINEOPTS->{noinputtag},
+    "nosplash"           => \$CMDLINEOPTS->{nosplash},
+    "showcomments"       => \$CMDLINEOPTS->{showcomments},
+    "showtext"           => \$CMDLINEOPTS->{showtext},
+    "version"            => \$CMDLINEOPTS->{showversion},
+
     "f=s"                => \$SECURERUN->{RUNFILE},
     "h=s"                => \$SECURERUN->{HOSTFILE},
-    "i"                  => \$CMDLINEOPTS->{INTERACTIVE},
     "l=s"                => \$SECURERUN->{LOCALHOST},
     "o=s"                => \%extraOps,
     "v"                  => \$v,
-    "checkmacro=s"       => \$CMDLINEOPTS->{CHECKMACRO},
-    "saverunfile=s"      => \$CMDLINEOPTS->{SAVERUNFILE},
-    "dontprocessrunfile" => \$CMDLINEOPTS->{DONTPROCESSRUNFILE},
     "noenv"              => \$noenv,
-    "noinput"            => \$CMDLINEOPTS->{NOINPUTTAG},
-    "nosplash"           => \$CMDLINEOPTS->{NOSPLASH},
-    "showcomments"       => \$CMDLINEOPTS->{SHOWCOMMENTS},
-    "showtext"           => \$CMDLINEOPTS->{SHOWTEXT},
-    "version"            => \$CMDLINEOPTS->{SHOWVERSION},
 );
+
+my @opts = qw/clear f=s h=s i l=s o=s v checkmacro=s saverunfile=s dontprocessrunfile noenv noinput nosplash showcomments showtext version/;
+h2o -nolock, $CMDLINEOPTS, opt2h2o(@opts);
 
 # Add %ENV into %extraOps
 if ( $noenv eq 0 ) {
@@ -182,24 +187,24 @@ sub init {
     # Clear terminal screen option
     #
 
-    if ( $CMDLINEOPTS->{CLEAR} ) {
-        system('clear');
+    if ( $CMDLINEOPTS->clear ) {
+        system(qw/clear/);
     }
 
     #
     # Prints version
     #
 
-    if ( $CMDLINEOPTS->{SHOWVERSION} ) {
+    if ( $CMDLINEOPTS->showversion ) {
         print "$VERSION \n\n";
-        exit 0;
+        exit;
     }
 
     #
     #  Prints text splash by default
     #
 
-    if ( !$CMDLINEOPTS->{NOSPLASH} ) {
+    if ( !$CMDLINEOPTS->nosplash ) {
         my $parserVersion = HTML::Parser->VERSION;
         print "@@~~~\n@@ securerun: [Parent PROCID: $$]\n@@ $VERSION\n@@ Perl $]\n@@ HTML::Parser $parserVersion\n@@~~~\n\n";
     }
@@ -257,7 +262,7 @@ sub init {
     #  not, return -1
     #
 
-    chomp( $SECURERUN->{LOCALHOST} );
+    chomp $SECURERUN->{LOCALHOST};
     setLocalhost();
     addToExtraOps( 'LOCALHOST', $SECURERUN->{LOCALHOST} );
 
@@ -419,7 +424,7 @@ sub getFirstLineFromFile {
 
 sub processPrefs {
     my $prefs = $SECURERUN->{PREFS};
-    chomp($prefs);
+    chomp $prefs;
     $prefs =~ s/\n|\s|\r//g;
     my @prefsArray = split( ';', $prefs );
     for ( my $i = 0; $i < scalar(@prefsArray); $i++ ) {
@@ -474,8 +479,8 @@ sub showIfVerbose {
     if ( $SECURERUN->{VERBOSE_LEVEL} >= $level ) {
 
         # parameter assignment
-        if ( $msg !~ m/^$/ ) {
-            chomp($msg);
+        if ( $msg ) {
+            chomp $msg;
             print "$msg\n";
         }
     }
@@ -571,7 +576,7 @@ sub getTmpPreProcessedFile {
 
         # dump file contents to tmp file
         my $tmpname = getTmpName();
-        chomp($tmpname);
+        chomp $tmpname;
         $tmpSrcFile = "$SECURERUN->{SRTMPDIR}/$tmpname";
 
         # send file to remote host
@@ -585,12 +590,12 @@ sub getTmpPreProcessedFile {
 sub checkForMacros {
     my ($txtToCheck) = $_[0];
     ## Check for left over macros
-    if ( $CMDLINEOPTS->{CHECKMACRO} eq "warn" || $CMDLINEOPTS->{CHECKMACRO} eq "halt" ) {
+    if ( $CMDLINEOPTS->checkmacro eq "warn" || $CMDLINEOPTS->checkmacro eq "halt" ) {
         if ( $txtToCheck =~ m/(%[a-zA-Z0-9]*%)/ ) {
-            if ( $CMDLINEOPTS->{CHECKMACRO} eq "warn" ) {
+            if ( $CMDLINEOPTS->{checkmacro} eq "warn" ) {
                 warn "WARNING: Undefined macro detected: $1...\n";
             }
-            elsif ( $CMDLINEOPTS->{CHECKMACRO} eq "halt" ) {
+            elsif ( $CMDLINEOPTS->checkmacro eq "halt" ) {
                 print "HALT: Undefined macro detected: $1...\n";
                 exit;
             }
@@ -680,8 +685,8 @@ sub validateAttributes {
 
 sub validatePipe {
     my ( $pipe, $default ) = @_;
-    if ( defined($pipe) ) {
-        chomp($pipe);
+    if ( defined $pipe ) {
+        chomp $pipe;
         if ( $pipe !~ m/[|]?|[<]{0,2}|[>]{0,2}/ ) {
             warn "WARNING: illegal pipe symbol detected ... reset to null string ...\n";
             $pipe = '';
@@ -696,8 +701,8 @@ sub validatePipe {
 
 sub validateWait {
     my ($wait) = @_;
-    if ( defined($wait) ) {
-        chomp($wait);
+    if ( defined $wait ) {
+        chomp $wait;
         if ( $wait !~ m/^[0-9]*$/ ) {
             $wait = 0;
         }
@@ -1129,7 +1134,7 @@ sub securerunTagStart {
 
     # Record directory securerun was executed from
     $SECURERUN->{INITIALDIR} = getcwd;
-    chomp( $SECURERUN->{INITIALDIR} );
+    chomp $SECURERUN->{INITIALDIR};
     if ( exists( $attributes->[0]{prefs} ) ) {
         $SECURERUN->{PREFS} = $attributes->[0]{prefs};
         processPrefs();
@@ -1148,13 +1153,13 @@ sub securerunTagStart {
     if ( exists( $attributes->[0]{basedir} ) ) {
         ensureLocalDir( qq($attributes->[0]{basedir}), 0755 );
         $SECURERUN->{BASEDIR} = Cwd::realpath(qq($attributes->[0]{basedir}));
-        chomp( $SECURERUN->{BASEDIR} );
+        chomp $SECURERUN->{BASEDIR};
     }
     else {
 
         # Assume basedir is current one, and assign via absolute path
         $SECURERUN->{BASEDIR} = getcwd;
-        chomp( $SECURERUN->{BASEDIR} );
+        chomp $SECURERUN->{BASEDIR};
     }
 
     # Add STARTDIR to default - i.e. the cwd where securerun is executed (not necessarily the BASEDIR!)
@@ -1167,7 +1172,7 @@ sub securerunTagStart {
     if ( exists( $attributes->[0]{tmpdir} ) ) {
         ensureLocalDir( qq($attributes->[0]{tmpdir}), 0755 );
         $SECURERUN->{SRTMPDIR} = Cwd::realpath(qq($attributes->[0]{tmpdir}));
-        chomp( $SECURERUN->{SRTMPDIR} );
+        chomp $SECURERUN->{SRTMPDIR};
     }    # default is set at the top
          # Add SRTMPDIR to %extraOps
     addToExtraOps( 'SRTMPDIR', $SECURERUN->{SRTMPDIR} );
@@ -1614,12 +1619,12 @@ sub runfileTagStart {
     my ($attributes) = \@attributes;
     if ( defined( $attributes->[0]{run} ) ) {
         if ( defined( $attributes->[0]{file} ) ) {
-            chomp( $attributes->[0]{file} );
+            chomp $attributes->[0]{file};
             $RUNFILE_ATTS->{file} = qq($attributes->[0]{file});
 
             #interp
             if ( defined( $attributes->[0]{interp} ) ) {
-                chomp( $attributes->[0]{interp} );
+                chomp $attributes->[0]{interp};
                 $RUNFILE_ATTS->{interp} = qq($attributes->[0]{interp});
             }
             else {
@@ -1638,7 +1643,7 @@ sub runfileTagStart {
 
             #args
             if ( defined( $attributes->[0]{args} ) ) {
-                chomp( $attributes->[0]{args} );
+                chomp $attributes->[0]{args};
                 $RUNFILE_ATTS->{args} = qq($attributes->[0]{args});
             }
             else {
@@ -1775,7 +1780,7 @@ sub runLocalFile {
 
             # capture STDOUT
             if ( $RUNFILE_ATTS->{name} ne 'STDOUT' ) {
-                chomp($SYSMSG);
+                chomp $SYSMSG;
                 addToExtraOps( $RUNFILE_ATTS->{name}, $SYSMSG );
                 addToExtraOps( 'STDOUT',              $SYSMSG );
 
@@ -1836,7 +1841,7 @@ sub runRemoteFile {
             }
             my $cmd = createCmd( $interp, $file );
             $SYSMSG = execViaSSH( $hostIPAddress, $srcFileHash->{USERNAME}, $srcFileHash->{PORT}, $cmd );
-            chomp($SYSMSG);
+            chomp $SYSMSG;
 
             # capture STDOUT
             if ( $RUNFILE_ATTS->{name} ne 'STDOUT' ) {
@@ -2087,7 +2092,7 @@ sub inputTagStart {
     my (@attributes) = $_[0];
     my ($attributes) = \@attributes;
     my $default      = '';
-    if ( $CMDLINEOPTS->{NOINPUTTAG} eq 0 ) {
+    if ( not $CMDLINEOPTS->noinputtag ) {
         if ( exists( $attributes->[0]{name} ) ) {
             if ( exists( $attributes->[0]{msg} ) ) {
                 my $showDefault = '>';
@@ -2100,7 +2105,7 @@ sub inputTagStart {
                 $attributes->[0]{msg} =~ s/\n\s*/\n/g;
                 print "\n" . qq($attributes->[0]{msg}) . " $showDefault";
                 my $in = <TTY>;
-                chomp($in);
+                chomp $in;
                 if ( $in !~ m/^$/ ) {
                     $in = preProcessStr( $in, %extraOps );
                     addToExtraOps( qq($attributes->[0]{name}), $in );
@@ -2144,7 +2149,7 @@ sub outputTagStart {
     my (@attributes) = $_[0];
     my ($attributes) = \@attributes;
     if ( exists( $attributes->[0]{msg} ) ) {
-        chomp( $attributes->[0]{msg} );
+        chomp $attributes->[0]{msg};
 
         # shifts text left for multi line entries
         $attributes->[0]{msg} =~ s/\n\s*/\n/g;
@@ -2176,7 +2181,7 @@ sub onStart {
     my ( $tagName, @attributes ) = @_;
 
     # Interactive mode
-    if ( $CMDLINEOPTS->{INTERACTIVE} eq 1 ) {
+    if ( $CMDLINEOPTS->{i} ) {
         print "START..<$tagName>: press key to continue [ctrl-c to quit]";
         my $ans = <STDIN>;
     }
@@ -2202,9 +2207,9 @@ sub onText {
         $text = preProcessStr( $text, %extraOps );
         scriptTagCode($text);
     }
-    if ( $CMDLINEOPTS->{SHOWTEXT} ) {
+    if ( $CMDLINEOPTS->showtext ) {
         if ( $text =~ m/[\w\d]/ && $text !~ m/^[\s\n]*$/ ) {
-            chomp($text);
+            chomp $text;
             print "$text\n";
         }
     }
@@ -2215,8 +2220,8 @@ sub onText {
 # Invoked when comments are encountered - print if flagged to do so
 sub onComment {
     my ($commentText) = @_;
-    if ( $CMDLINEOPTS->{SHOWCOMMENTS} ) {
-        chomp($commentText);
+    if ( $CMDLINEOPTS->showcomments ) {
+        chomp $commentText;
         print "$commentText\n";
     }
     showCallerInfo( caller() );
@@ -2228,7 +2233,7 @@ sub onEnd {
     my ($tagName) = @_;
 
     # Interactive mode
-    if ( $CMDLINEOPTS->{INTERACTIVE} eq 1 ) {
+    if ( $CMDLINEOPTS->i ) {
         print "END....<$tagName>: press key to continue [ctrl-c to quit]";
         my $ans = <STDIN>;
     }
@@ -2263,7 +2268,7 @@ sub main {
     # 1) Preprocess $ML with %extraOps - these are static vars
     #    invoked through command line "-o" and envronmental vars.
     #    run file processed by default unlees "-dontprocessrunfile" is set
-    if ( $CMDLINEOPTS->{DONTPROCESSRUNFILE} ne 1 ) {
+    if ( $CMDLINEOPTS->dontprocesrunfile ) {
         $ML = preProcessStr( $ML, %extraOps );
     }
 
@@ -2272,11 +2277,11 @@ sub main {
     $PARSER->parse($ML);
 
     # !!CHANGE TO "-saverunfile"!!!
-    # 3) Dump out copy of the run file in basedir if "-SAVERUNFILE" is set
-    if ( $CMDLINEOPTS->{SAVERUNFILE} !~ m/^$/ ) {
-        open( RUNFILE, ">$CMDLINEOPTS->{SAVERUNFILE}" );
-        print RUNFILE $ML;
-        close(RUNFILE);
+    # 3) Dump out copy of the run file in basedir if "-saverunfile" is set
+    if ( $CMDLINEOPTS->saverunfile ) {
+        open my $RUNFILE, q{>}, $CMDLINEOPTS->saverunfile;
+        print $RUNFILE $ML;
+        close $RUNFILE;
     }
     showCallerInfo( caller() );
     return;
