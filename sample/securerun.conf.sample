@@ -1,0 +1,25 @@
+---
+fullmachinename:
+  MACHINE: 'Linux fullmachinename 4.18.0-348.el8.x86_64 #1 SMP Mon Oct 4 12:17:22 EDT 2021 x86_64 x86_64 x86_64 GNU/Linux'
+  HOSTINFO:
+    - ipaddress: 127.0.0.1
+      name: localhost
+    - ipaddress: 127.0.0.1
+      name: fullmachinename 
+  INTERP:
+    - alias: SSH
+      bin: /usr/bin/ssh
+      default_cmd: ''
+      flags: ''
+    - alias: SCP
+      bin: /usr/bin/scp
+      default_cmd: ''
+      flags: ''
+    - alias: PERL
+      bin: perl
+      default_cmd: '%i %a %f'
+      flags: ''
+    - alias: SH
+      bin: /usr/bin/sh
+      default_cmd: '%i %a %f'
+      flags: ''

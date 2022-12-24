@@ -1,144 +1,21 @@
 #!/usr/bin/env perl
-#
-package bin::securerun;
 
-# $Revision: 1.136 $ $Date: 2004/03/11 23:47:59 $ $Author: estrade $
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#  Project information
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#  OPTIONS
-#   -c
-#        clear screen when securerun is activated
-#
-#   -f
-#        supports old style securerun runfile option
-#
-#   -h
-#        specifies the .srhosts.def file that describes the environment
-#        of the machine you are working from.  If not specified, it searches
-#        all the directories listed in your PATH enviromental variable.  It
-#        is best to place this in your home directory and make sure that "~"
-#        is in your path.
-#
-#   -i   interactive mode - asks for user to hit a key whenever a start tag
-#        is encountered - useful for debugging.
-#
-#
-#   -l
-#        allows user to select any host in .srhost.def as their local host;
-#        default is "localhost," and it is specified using the value of the
-#        "name" attribute in the "host" tag.
-#
-#   -o
-#        specify arguments to pass through to the configuration file for
-#        preprocessing; ex -o ARG1=123 -o ARG2=abc will result in $ARG1 and
-#        $ARG2 in the configuration being replaced with 123 and abc
-#        respectively prior to the actual running of the config file
-#
-#   -v
-#        verbose mode
-#
-#   -checkmacro [none|warn|halt]
-#        sets the level and response of unresolved
-#        macros (ex, %VARNAME%); options are none, warn, and halt;
-#        default is none.  !THIS OPTION IS NOT FULLY IMPLEMENTED!
-#
-#   -saverunfile
-#        if set, a copy of the actual run file is dumped in the base
-#        directory.
-#
-#   -dontprocessrunfile
-#        if set, securerun will not process the run file; the run file
-#        is processed for macros by default.
-#
-#   -noenv
-#        doesn't read in environment into %extraOps hash used in macro
-#        processing
-#
-#   -noinput
-#        disables <input> tag used for interactivity - could break scripts
-#        that depend on user input, but could be useful if run in batch
-#        defining vars through "-o"
-#
-#   -nosplash
-#        do not display securerun splash message
-#
-#   -showcomments
-#        displays comments during processing - useful for status messages
-#
-#   -showtext
-#        displays all text detected by HTML::Parser
-#
-#   -version
-#        lists the version number and exits
-#
-#   DEPENDANCIES
-#    Perl 5.6.0+ (+ core modules GetOpts, File), HTML::Parser, ssh, scp
-#
-#    HTML::Parser documentation is at:
-#    http://www.perldoc.com/perl5.6.1/lib/HTML/Parser.html
-#    If it is not installed system wide, install locally, and
-#    utilize environmental variable, PERL5LIB (colon delimited) to point
-#    to the location of the lib.
-#
-#   PLATFORMS
-#    Any thing with Perl 5.6.1 on it ;)
-#
-#   TERMS
-#    Nothing in whole or part can be reproduced until further notice, and
-#    I am not responsible for any damage done to any systems from the use
-#    of this code.
-#
-#   AUTHOR(S)
-#    Original conception and development:
-#    Brett D. Estrade <estrade@nrlssc.navy.mil>
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-# BEGIN block - always run first
-BEGIN {
-
-    # Check required modules - Possible location for boot strapping
-    eval "use HTML::Parser";
-    if ($@) {
-        system('clear');
-        print <<"DONE";
-@@~~~
-@@ HTML::Parser not found or not compiled with correct perl...
-@@ Run setup.sh or install HTML::Parser 3.35 manually and add
-@@ the absolute paths to the (HTML::PARSER) blib/lib and
-@@ blib/arch to your PERL5LIB environmental variable...
-@@
-@@ NOTE: when installing HTML::Parser, Makefile.PL needs
-@@ to be run with the same Perl executable that will be
-@@ used to run securerun.pl
-@@
-@@ See In for more information...
-@@~~~
-DONE
-        exit;
-    }
-}
-
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# Includes
-# Be sure that "PERL5LIB" is part of the environmental settings, and contains
-# a colon delimited list of the HTML::Parser modules that are required:
-#  1) (HTML::Parser_Install_Dir)/blib/lib
-#  2) (HTML::Parser_Install_Dir)/blib/arch
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-#use 5.005_02;
 use strict;
 use warnings;
 
-use Getopt::Long;     # used to process commandline options
-use Sys::Hostname;    # for figuring out hostname
-use File::Copy;       # used in copying
-use File::Path;       # used in making dirs
-use Cwd;              # to get current working directory
+package bin::securerun;
 
-#use Data::Dumper;
-$|++;                 # turn off buffering
+use Getopt::Long;                   # used to process commandline options
+use Sys::Hostname;                  # for figuring out hostname
+use HTML::Parser;                   # event-based parsing of tags
+use File::Copy;                     # used in copying
+use File::Path;                     # used in making dirs
+use Cwd;                            # to get current working directory
+use YAML;                           # get $HOME/securerun.conf
+use Util::H2O::More qw/h2o h3o/;    # ez inline objects
+$|++;                               # turn off buffering
+
+require Data::Dumper;
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Constants
@@ -154,12 +31,7 @@ use constant {
     EXIT_DIE     => 255,
 };
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# Version - define version number with CVS keywords for output
-# with "-version" flag
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-my $VERSION = '$Date: 2004/03/11 23:47:59 $ $Revision: 1.136 $';
+my $VERSION = q{2.0};
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Global Variables
@@ -168,20 +40,15 @@ my $VERSION = '$Date: 2004/03/11 23:47:59 $ $Revision: 1.136 $';
 #   globally.
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-my %SECURERUN = ();
-
-# create reference to hash
-my $SECURERUN = \%SECURERUN;
-$SECURERUN->{CREATE_DIRS}   = 0;    #0 means no, 1 means yes
-                                    # noise levels!
-$SECURERUN->{VERBOSE_LEVEL} = 0;    #0,1,2,4 - where higher is more verbose
-                                    # important variables
-my $HOME = ( getpwuid $< )[7];
-$SECURERUN->{HOSTFILE} = qq{$HOME/.srhosts.def};
-
-$SECURERUN->{SRTMPDIR}  = getTmpName();
-$SECURERUN->{SRTMPDIR}  = "/tmp/.oO0-securerun$SECURERUN->{SRTMPDIR}-0Oo";
-$SECURERUN->{LOCALHOST} = '';
+my $HOME      = ( getpwuid $< )[7];
+my $SECURERUN = h2o -nolock, {
+    CREATE_DIRS   => 0,                                                 #0 means no, 1 means yes
+    VERBOSE_LEVEL => 0,                                                 #0,1,2,4 - where higher is more verbose (noise levels!)
+    HOSTFILE      => qq{$HOME/securerun.conf},                          # uses YAML now
+    SRTMPDIR      => getTmpName(),
+    SRTMPDIR      => sprintf "/tmp/.$$-secureru",
+    LOCALHOST     => '',
+};
 
 # Used by tags to store attributes
 my %SCRIPT_ATTS  = ();
@@ -192,8 +59,9 @@ my %RUNFILE_ATTS = ();
 my $RUNFILE_ATTS = \%RUNFILE_ATTS;
 
 # Used to store host information from $SECURERUN->{HOSTFILE} file
-use vars qw(%MYHOSTS $AUTOLOAD);
-my $MYHOSTS = \%MYHOSTS;
+use vars qw($AUTOLOAD);
+
+my $MYHOSTS = {};
 
 # Dir creation history array - dir pushed every time mkLocalDir is called
 my @filesToRemove = ();
@@ -249,6 +117,8 @@ addToExtraOps( 'STDOUT', '' );
 #
 # Options defaults
 #
+
+## convert to using opt2h2o
 
 my %CMDLINEOPTS = ();
 my $CMDLINEOPTS = \%CMDLINEOPTS;
@@ -374,7 +244,7 @@ sub init {
         #  !! POTENTIAL SECURITY VULNERABILITY
         #  !! Should validate that this is just an hash !!
         # TODO... convert to YAML!!
-        require $SECURERUN->{HOSTFILE};
+        $MYHOSTS = YAML::LoadFile ($SECURERUN->HOSTFILE);
     }
     else {
         print "HALT: $SECURERUN->{HOSTFILE} file not found ...\n";
@@ -388,7 +258,7 @@ sub init {
     #
 
     chomp( $SECURERUN->{LOCALHOST} );
-    &setLocalhost();
+    setLocalhost();
     addToExtraOps( 'LOCALHOST', $SECURERUN->{LOCALHOST} );
 
     # untested xp solution to getting interactive input on windows.
@@ -865,7 +735,7 @@ sub validateYesNo {
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 #
-#  gets interpretor information from %MYHOSTS
+#  gets interpretor information from $MYHOSTS
 #
 
 sub getInterpInfo {
@@ -878,7 +748,7 @@ sub getInterpInfo {
     if ( $hostrecord ne -1 ) {
 
         # get interp
-        for my $interplist ( @{ $MYHOSTS{$hostrecord}{INTERP} } ) {
+        for my $interplist ( @{ $MYHOSTS->{$hostrecord}->{INTERP} } ) {
             if ( $interp eq $interplist->{alias} ) {
                 $rethash->{BIN}         = $interplist->{bin};
                 $rethash->{FLAGS}       = $interplist->{flags};
@@ -968,8 +838,8 @@ sub parseDirPath {
 sub getHostRecordName {
     my ($aliasOrIP) = $_[0];
     my $hostname = -1;
-    foreach my $hostrecord ( keys %MYHOSTS ) {
-        for my $namelist ( @{ $MYHOSTS{$hostrecord}{HOSTINFO} } ) {
+    foreach my $hostrecord ( keys %$MYHOSTS ) {
+        for my $namelist ( @{ $MYHOSTS->{$hostrecord}->{HOSTINFO} } ) {
             if ( $aliasOrIP eq $namelist->{name} || $aliasOrIP eq $namelist->{ipaddress} ) {
                 $hostname = $hostrecord;
 
@@ -995,8 +865,8 @@ sub getHostRecordName {
 sub getIPAddress {
     my ($aliasOrIP) = $_[0];
     my $ipaddress = -1;
-    foreach my $hostrecord ( keys %MYHOSTS ) {
-        for my $namelist ( @{ $MYHOSTS{$hostrecord}{HOSTINFO} } ) {
+    foreach my $hostrecord ( keys %$MYHOSTS ) {
+        for my $namelist ( @{ $MYHOSTS->{$hostrecord}->{HOSTINFO} } ) {
             if ( $aliasOrIP eq $namelist->{name} || $aliasOrIP eq $namelist->{ipaddress} ) {
                 $ipaddress = $namelist->{ipaddress};
 
@@ -1021,7 +891,7 @@ sub getIPAddress {
 sub isInHostFile {
     my ($aliasOrIP) = $_[0];
     my $retval = 0;
-    if ( defined( $MYHOSTS{$aliasOrIP} ) ) {
+    if ( defined( $MYHOSTS->{$aliasOrIP} ) ) {
         $retval = 1;
     }
     elsif ( getIPAddress($aliasOrIP) ne -1 ) {
@@ -2413,10 +2283,10 @@ sub main {
 }    # end sub main
 
 # Call sub init
-&init();
+init();
 
 # Call sub main
-&main();
+main();
 
 # Flush parser buffer
 $PARSER->eof;
@@ -2427,4 +2297,99 @@ END {
     rmtree $SECURERUN->{SRTMPDIR};
 }
 
-exit(0);
+exit;
+
+__END__
+
+# $Revision: 1.136 $ $Date: 2004/03/11 23:47:59 $ $Author: estrade $
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#  Project information
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#  OPTIONS
+#   -c
+#        clear screen when securerun is activated
+#
+#   -f
+#        supports old style securerun runfile option
+#
+#   -h
+#        specifies the .srhosts.def file that describes the environment
+#        of the machine you are working from.  If not specified, it searches
+#        all the directories listed in your PATH enviromental variable.  It
+#        is best to place this in your home directory and make sure that "~"
+#        is in your path.
+#
+#   -i   interactive mode - asks for user to hit a key whenever a start tag
+#        is encountered - useful for debugging.
+#
+#
+#   -l
+#        allows user to select any host in .srhost.def as their local host;
+#        default is "localhost," and it is specified using the value of the
+#        "name" attribute in the "host" tag.
+#
+#   -o
+#        specify arguments to pass through to the configuration file for
+#        preprocessing; ex -o ARG1=123 -o ARG2=abc will result in $ARG1 and
+#        $ARG2 in the configuration being replaced with 123 and abc
+#        respectively prior to the actual running of the config file
+#
+#   -v
+#        verbose mode
+#
+#   -checkmacro [none|warn|halt]
+#        sets the level and response of unresolved
+#        macros (ex, %VARNAME%); options are none, warn, and halt;
+#        default is none.  !THIS OPTION IS NOT FULLY IMPLEMENTED!
+#
+#   -saverunfile
+#        if set, a copy of the actual run file is dumped in the base
+#        directory.
+#
+#   -dontprocessrunfile
+#        if set, securerun will not process the run file; the run file
+#        is processed for macros by default.
+#
+#   -noenv
+#        doesn't read in environment into %extraOps hash used in macro
+#        processing
+#
+#   -noinput
+#        disables <input> tag used for interactivity - could break scripts
+#        that depend on user input, but could be useful if run in batch
+#        defining vars through "-o"
+#
+#   -nosplash
+#        do not display securerun splash message
+#
+#   -showcomments
+#        displays comments during processing - useful for status messages
+#
+#   -showtext
+#        displays all text detected by HTML::Parser
+#
+#   -version
+#        lists the version number and exits
+#
+#   DEPENDANCIES
+#    Perl 5.6.0+ (+ core modules GetOpts, File), HTML::Parser, ssh, scp
+#
+#    HTML::Parser documentation is at:
+#    http://www.perldoc.com/perl5.6.1/lib/HTML/Parser.html
+#    If it is not installed system wide, install locally, and
+#    utilize environmental variable, PERL5LIB (colon delimited) to point
+#    to the location of the lib.
+#
+#   PLATFORMS
+#    Any thing with Perl 5.6.1 on it ;)
+#
+#   TERMS
+#    Nothing in whole or part can be reproduced until further notice, and
+#    I am not responsible for any damage done to any systems from the use
+#    of this code.
+#
+#   AUTHOR(S)
+#    Original conception and development:
+#    Brett D. Estrade <estrade@nrlssc.navy.mil>
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
