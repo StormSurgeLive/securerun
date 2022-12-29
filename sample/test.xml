@@ -92,6 +92,9 @@
       echo "# ..detecting csh:           %LOCALHOST.CSH% "
       echo "# ..detecting perl:          %LOCALHOST.PERL%"
       echo "########"
+      if [ -n "%FOO%" ]; then
+        echo "FOO=%FOO%"
+      fi
     ]]>    
   </script>  
   

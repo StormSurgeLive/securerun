@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='utf-8'?>
+<securerun
+  name="test.startadc" 
+  basedir="./TEST_%PROCID%" 
+  prefs="-verbose_level:1;-create_dirs:1;">
+ 
+  <define name="USER" value="estrabd"/>
+  <define name="REMOTEHOST1" value="qbc"/>
+  <define name="RMTDIR" value="/home/estrabd"/>
+
+  <script cmd="%i %f" interp="SH">
+    <![CDATA[
+      echo   "this is a test..."
+      hostname
+    ]]>    
+  </script> 
+  
+  <!-- remote test -->
+  <script name="TEST.OUT" file="%USER%@%REMOTEHOST1%:%RMTDIR%/%PROCID%.sh" cmd="%i %f" interp="SH">
+    <![CDATA[
+      echo hi 
+      hostname
+      echo proof of remote run > OUT.out
+    ]]>
+  </script>
+
+  <!-- report results of remote output -->
+  <script cmd="%i %f" interp="SH">
+    <![CDATA[
+      echo "Remote output":
+      echo "%TEST.OUT%"
+    ]]>    
+  </script> 
+
+</securerun>
