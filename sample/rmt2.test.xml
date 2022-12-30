@@ -1,35 +1,65 @@
 <?xml version='1.0' encoding='utf-8'?>
 <securerun
-  name="test.startadc" 
-  basedir="./TEST_%PROCID%" 
-  prefs="-verbose_level:1;-create_dirs:1;">
- 
-  <define name="USER" value="estrabd"/>
-  <define name="REMOTEHOST1" value="qbc"/>
-  <define name="RMTDIR" value="/home/estrabd"/>
+  name="ASGS-upload-results" 
+  basedir="./scratchdir%PROCID%" 
+  prefs="-create_dirs:1;">
 
+  <!-- pid %PROCID%: initial macros to define -->
+  <define name="USER"        value="%u%">
+  <define name="REMOTEHOST1" value="%host%">
+  <define name="RMTHOME"     value="/home/%u%">
+  <define name="INITBASEDIR" value="%BASEDIR%">
+  <!-- pid %PROCID%: 'INITBASEDIR' defined as "%INITBASEDIR%" -->
+
+  <chbasedir to=".." />
+  <!-- pid %PROCID%: 'BASEDIR' now defined as "%BASEDIR%" (to="..") -->
+
+  <!-- pid %PROCID%: creating a file to test upload %REMOTEHOST1%, TEST.tar.gz -->
   <script cmd="%i %f" interp="SH">
     <![CDATA[
-      echo   "this is a test..."
-      hostname
+      tar cf ./TEST.tar.gz .git 2> /dev/null
     ]]>    
-  </script> 
-  
-  <!-- remote test -->
-  <script name="TEST.OUT" file="%USER%@%REMOTEHOST1%:%RMTDIR%/%PROCID%.sh" cmd="%i %f" interp="SH">
+  </script>
+
+  <!-- pid %PROCID%: about to move a file locally to %INITBASEDIR% -->
+  <pfile src="./TEST.tar.gz" to="%INITBASEDIR" as="foo.tar.gz" put="y" keep="y" />
+
+  <!-- pid %PROCID%: remote test -->
+  <script name="TEST.OUTPUT" src="%REMOTEHOST1%:%RMTHOME%/%PROCID%.sh" cmd="%i %f" interp="SH">
     <![CDATA[
-      echo hi 
-      hostname
-      echo proof of remote run > OUT.out
+      # this script is actually executing on %REMOTEHOST1%!
+      ACTUALHOSTNAME=$(hostname)
+      echo "specifically host $ACTUALHOSTNAME"
+      if [ ! -d "%RMTHOME%/test" ]; then
+        mkdir "%RMTHOME%/test" && \
+	  echo created %RMTHOME%/test on %REMOTEHOST%
+      else
+        echo "%RMTHOME%/test" exists
+      fi
+      echo deleting self, "$0"
+      rm -v $0
     ]]>
   </script>
 
-  <!-- report results of remote output -->
+  <!-- pid %PROCID%: about to move a file remotely -->
+  <pfile src="./TEST.tar.gz" to="%REMOTEHOST1%:%RMTHOME%/test" as="foo.tar.gz" put="y" keep="y" />
+
+  <!-- pid %PROCID%: downloading file that was just uploaded -->
+  <pfile src="%REMOTEHOST1%:%RMTHOME%/test/foo.tar.gz" to="%BASEDIR%" as="foo2.tar.gz" put="y" keep="y" />
+
+  <!-- pid %PROCID%: cleaning up downloaded file -->
   <script cmd="%i %f" interp="SH">
     <![CDATA[
-      echo "Remote output":
-      echo "%TEST.OUT%"
+      if [ -e ../foo2.tar.gz ]; then
+        echo Found: foo2.tar.gz retreived from %REMOTEHOST1% !!
+	echo deleting ..
+	rm -v ../foo2.tar.gz
+      fi
     ]]>    
   </script> 
 
+  <!-- pid %PROCID%: report results of remote output -->
+  <!-- pid %PROCID%: output from runnging "%REMOTEHOST1%:%RMTHOME%/%PROCID%.sh"
+%TEST.OUTPUT%
+  -->
 </securerun>

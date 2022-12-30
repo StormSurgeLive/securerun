@@ -69,14 +69,25 @@ sub AUTOLOAD {
     return;
 }
 
+# Debugging routines
+
+sub ddd (@) {
+    print Data::Dumper::Dumper( \@_ );
+}
+
+sub dddie (@) {
+    print STDERR Data::Dumper::Dumper( \@_ );
+    exit 255;
+}
+
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Initialization of options, options processing, and input files
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 # Initialize extraOps with environmental variables
 my $extraOps = {
-  PROCID => $$,
-  STDOUT => q{},  
+    PROCID => $$,
+    STDOUT => q{},
 };
 
 #
@@ -84,7 +95,7 @@ my $extraOps = {
 #
 
 my @default_opts = qw/clear tmpdir=s D=s@ i v=i h f=s noenv localhost checkmacro=s saverunfile=s dontprocessrunfile noinputtag nosplash showcomments showtext version/;
-my $SECURERUN = h2o -nolock, {
+my $SECURERUN    = h2o -nolock, {
     D                 => [],
     clear             => undef,
     checkmacro        => 'none',
@@ -94,24 +105,24 @@ my $SECURERUN = h2o -nolock, {
     showcomments      => undef,
     showtext          => undef,
     showversion       => undef,
-    clear             => undef,
     dontprocesrunfile => undef,
     i                 => undef,
-    create_dirs       => 0,                         #0 means no, 1 means yes
-    v                 => 0,                         #0,1,2,4 - where higher is more verbose (noise levels!)
-    h                 => qq{$HOME/securerun.conf},  # uses YAML now
-    tmpdir            => sprintf qq{/tmp/$$},
+    create_dirs       => 0,                            #0 means no, 1 means yes
+    v                 => 0,                            #0,1,2,4 - where higher is more verbose (noise levels!)
+    h                 => qq{$HOME/securerun.conf},     # uses YAML now
+    tmpdir            => sprintf( qq{/tmp/%d}, $$ ),
     localhost         => q{localhost},
     f                 => undef,
     noenv             => undef,
-}, opt2h2o @default_opts;
+  },
+  opt2h2o @default_opts;
 
 Getopt::Long::GetOptionsFromArray( \@ARGV, $SECURERUN, @default_opts );
 
 # handle -o FOO=abc...z
-foreach my $xo (@{$SECURERUN->D}) {
-  my ($LHS, $RHS) = split /=/, $xo;
-  addToExtraOps( $LHS, $RHS);
+foreach my $xo ( @{ $SECURERUN->D } ) {
+    my ( $LHS, $RHS ) = split /=/, $xo;
+    addToExtraOps( $LHS, $RHS );
 }
 
 # Add %ENV into %extraOps
@@ -221,7 +232,7 @@ sub init {
     }
     else {
         print "HALT: $SECURERUN->{h} file not found ...\n";
-        exit 1;
+        exit EXIT_ERROR;
     }
 
     #
@@ -275,12 +286,8 @@ sub ensureLocalDir {
     if ( $SECURERUN->{create_dirs} eq 1 ) {
 
         # mkdir if $dir doesn't exist or if $dir is not a directory
-        if ( !-e $dir ) {
-            $retval = mkpath( $dir, 0, $mode ) || die $!;
-        }
-        elsif ( !-d $dir ) {
-            rmtree( $dir, 0, 0 );
-            $retval = mkpath( $dir, 0, $mode ) || die $!;
+        if ( not -e $dir ) {
+            $retval = mkpath( $dir, 0, $mode ) or die $!;
         }
         else {
             my $pwd = getcwd;
@@ -297,7 +304,7 @@ sub ensureLocalDir {
 
 sub touchFile {
     my ($file) = @_;
-    open my $fh, '>', "$file" || die $!;
+    open my $fh, '>', "$file" or die $!;
     print $fh '';
     close $fh;
     showCallerInfo(caller);
@@ -325,20 +332,14 @@ sub getLastPathMember {
 
 # cd to BASEDIR
 sub cdCwdToBASEDIR {
-    chdir $SECURERUN->{BASEDIR} || die $!;
+    chdir $SECURERUN->{BASEDIR} or die $!;
     showCallerInfo(caller);
     return;
 }
 
 sub cdCwdToDir {
     my ($dir) = $_[0];
-    if ( !-d $dir ) {
-        print "HALT: $dir doesn't exist or is not a directory!...\n";
-        exit;
-    }
-    else {
-        chdir $dir || die $!;
-    }
+    chdir $dir or die $!;
     showCallerInfo(caller);
     return;
 }
@@ -358,7 +359,8 @@ sub prepForNewFile {
 }
 
 sub getTmpName {
-    return '.' . rand( time() * rand() );
+    srand time;
+    return sprintf( qq{%d%s}, $$, int rand 100_000 );
 }
 
 #
@@ -503,18 +505,18 @@ sub preProcessFile {
 
         # Build string containing file txt (include control chars)
         my $FILETXT = '';
-        open my $fh, '<', "$file" || die "Cannot open $file for reading: $!";
+        open my $fh, '<', "$file" or die "Cannot open $file for reading: $!";
         while (<$fh>) {
             $FILETXT .= $_;
         }
-        close $fh || die "Cannot close filename: $!";
+        close $fh;
 
         # Replace macros in string with %options hash
         $FILETXT = preProcessStr( $FILETXT, $options );
 
         # Replace file!!
         prepForNewFile($file);
-        open $fh, '>', "$file" || die "Cannot open $file for writing: $!";
+        open $fh, '>', "$file" or die "Cannot open $file for writing: $!";
         print $fh $FILETXT;
         close $fh;
     }
@@ -554,7 +556,7 @@ sub getTmpPreProcessedFile {
 sub checkForMacros {
     my ($txtToCheck) = $_[0];
     ## Check for left over macros
-    if ( $SECURERUN->checkmacro eq "warn" || $SECURERUN->checkmacro eq "halt" ) {
+    if ( $SECURERUN->checkmacro eq "warn" or $SECURERUN->checkmacro eq "halt" ) {
         if ( $txtToCheck =~ m/(%[a-zA-Z0-9]*%)/ ) {
             if ( $SECURERUN->{checkmacro} eq "warn" ) {
                 warn "WARNING: Undefined macro detected: $1...\n";
@@ -622,8 +624,7 @@ sub createCmd {
     # %a = args
     # %f = file
     chomp( $interp, $file );
-    my %srcFileHash = parseDirPath( $RUNFILE_ATTS->{file} );
-    my $srcFileHash = \%srcFileHash;
+    my $srcFileHash = parseDirPath( $RUNFILE_ATTS->{file} );
     my $cmd         = $RUNFILE_ATTS->{cmd};
     $cmd =~ s/%a/$RUNFILE_ATTS->{args}/g;
     $cmd =~ s/%f/$file/g;
@@ -682,10 +683,10 @@ sub validateYesNo {
     my ( $yesNo, $default ) = @_;
     if ($yesNo) {
         chomp( $yesNo, $default );
-        if ( $yesNo =~ m/^[nN][oO]$/ || $yesNo =~ m/^[nN]$/ || $yesNo eq 0 ) {
+        if ( $yesNo =~ m/^[nN][oO]$/ or $yesNo =~ m/^[nN]$/ or $yesNo eq 0 ) {
             $yesNo = "NO";
         }
-        elsif ( $yesNo =~ m/^[yY][eE][sS]$/ || $yesNo =~ m/^[yY]$/ || $yesNo eq 1 ) {
+        elsif ( $yesNo =~ m/^[yY][eE][sS]$/ or $yesNo =~ m/^[yY]$/ or $yesNo eq 1 ) {
             $yesNo = "YES";
         }
         else {
@@ -711,8 +712,7 @@ sub getInterpInfo {
     my ( $host, $interp ) = @_;
     chomp( $host, $interp );
     my $hostrecord = getHostRecordName($host);
-    my %rethash    = ();
-    my $rethash    = \%rethash;
+    my $rethash    = {};
     $rethash->{VALID} = 0;
     if ( $hostrecord ne -1 ) {
 
@@ -730,7 +730,7 @@ sub getInterpInfo {
         }
     }
     showCallerInfo(caller);
-    return %rethash;
+    return h2o $rethash;
 }
 
 # ensure interp if listed in securerun.ini for host in $rundir
@@ -744,16 +744,14 @@ sub isValidInterp {
         $host = $SECURERUN->{localhost};
     }
     elsif ( $isLocal eq 0 ) {
-        my %hostHash = parseDirPath($rundir);
-        my $hostHash = \%hostHash;
+        my $hostHash = parseDirPath($rundir);
         $host = $hostHash->{HOST};
     }
     else {
         $retval = -1;
     }
     if ( $retval ne -1 ) {
-        my %interpHash = getInterpInfo( $host, $interp );
-        my $interpHash = \%interpHash;
+        my $interpHash = getInterpInfo( $host, $interp );
         $retval = $interpHash->{VALID};
     }
     showCallerInfo(caller);
@@ -796,7 +794,7 @@ sub parseDirPath {
         $rethash->{PATH} = '~';
     }
     showCallerInfo(caller);
-    return %rethash;
+    return \%rethash;
 }
 
 #
@@ -809,7 +807,7 @@ sub getHostRecordName {
     my $hostname = -1;
     foreach my $hostrecord ( keys %$MYHOSTS ) {
         foreach my $namelist ( @{ $MYHOSTS->{$hostrecord}->{HOSTINFO} } ) {
-            if ( $aliasOrIP eq $namelist->{name} || $aliasOrIP eq $namelist->{ipaddress} ) {
+            if ( $aliasOrIP eq $namelist->{name} or $aliasOrIP eq $namelist->{ipaddress} ) {
                 $hostname = $hostrecord;
 
                 # break out of for loop
@@ -836,7 +834,7 @@ sub getIPAddress {
     my $ipaddress = -1;
     foreach my $hostrecord ( keys %$MYHOSTS ) {
         for my $namelist ( @{ $MYHOSTS->{$hostrecord}->{HOSTINFO} } ) {
-            if ( $aliasOrIP eq $namelist->{name} || $aliasOrIP eq $namelist->{ipaddress} ) {
+            if ( $aliasOrIP eq $namelist->{name} or $aliasOrIP eq $namelist->{ipaddress} ) {
                 $ipaddress = $namelist->{ipaddress};
 
                 # break out of for loop
@@ -881,8 +879,7 @@ sub isLocal {
     my ($path) = $_[0];
     my $retval = 0;
     if ( defined($path) ) {
-        my %hostHash = parseDirPath($path);
-        my $hostHash = \%hostHash;
+        my $hostHash = parseDirPath($path);
         if ( defined( $hostHash->{HOST} ) ) {
             if ( isInHostFile( $hostHash->{HOST} ) ) {
                 my $ip1 = getIPAddress( $SECURERUN->{localhost} );
@@ -969,41 +966,31 @@ sub setLocalhost {
 # SSH/SCP wrappers and run file helper functions
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-#
-# execViaSSH($hostIPAddress,$hostHash->{USERNAME},$hostHash->{PORT},$cmd)
-#   executes a remote command via ssh
-#
-
 sub execViaSSH {
     my ( $host, $user, $port, $cmd ) = @_;
     my $retval  = '';
-    my %sshHash = getInterpInfo( $SECURERUN->{localhost}, "SSH" );
-    my $sshHash = \%sshHash;
+    my $sshHash = getInterpInfo( $SECURERUN->localhost, "SSH" );
 
     # Create $hoststr, ie, user@host...
-    my $hoststr = '';
-    if ( $user !~ m/^$/ ) {
+    my $hoststr = $host;
+    if ($user) {
         $hoststr = "$user\@$host";
     }
-    else {
-        $hoststr = "$host";
-    }
 
-    if ( $sshHash->{VALID} eq 1 ) {
-        if ( -x $sshHash->{BIN} ) {
-            $SYSMSG = "Attempting to execute remote command(s) using connect string \"$hoststr\":\n  $cmd\n";
-            showIfVerbose( $SYSMSG, 1 );
-            my @retval = qx/$sshHash->{BIN} -p $port $sshHash->{FLAGS} $hoststr "$cmd 2>&1"/;
-	    $retval = (@retval) ?  join(qq{ }, @retval) : q{};
-        }
-        else {
-            print "HALT: ssh not valid on localhost - does $sshHash->{BIN} exist?\n";
-            exit 1;
+    if ( $sshHash->VALID and -x $sshHash->BIN ) {
+        $SYSMSG = "Attempting to execute remote command(s) using connect string \"$hoststr\":\n  $cmd\n";
+        showIfVerbose( $SYSMSG, 1 );
+        my $exec = sprintf qq{%s -p %s %s %s '%s 2>&1'}, $sshHash->BIN, $port, $sshHash->FLAGS, $hoststr, $cmd;
+        $retval = qx/$exec/;
+        my $exit_code = $? >> 8;
+        if ( $exit_code != EXIT_SUCCESS ) {
+            printf "HALT: ssh command exited non-zero code ($exit_code)\n$retval";
+            exit $exit_code;
         }
     }
     else {
-        print "HALT: ssh not valid on $SECURERUN->{localhost}\n";
-        exit 1;
+        printf qq{HALT: ssh not valid or not executable on %s\n}, $SECURERUN->{localhost};
+        exit EXIT_ERROR;
     }
     showCallerInfo(caller);
     return $retval;
@@ -1016,33 +1003,28 @@ sub execViaSSH {
 sub getViaSCP {
     my ( $host, $user, $port, $rmtFile, $localPath ) = @_;
     my ( $retval, $usrstr );
-    my %scpHash = getInterpInfo( $SECURERUN->{localhost}, "SCP" );
-    my $scpHash = \%scpHash;
+    my $scpHash = getInterpInfo( $SECURERUN->{localhost}, "SCP" );
 
     # Create $hoststr, ie, user@host...
-    my $hoststr = '';
-    if ( $user !~ m/^$/ ) {
+    my $hoststr = $host;
+    if ($user) {
         $hoststr = "$user\@$host";
     }
-    else {
-        $hoststr = "$host";
-    }
 
-    # NEED TO GET STDOUT AND STDERR BACK - how?!
-    if ( $scpHash->{VALID} eq 1 ) {
-        if ( -x $scpHash->{BIN} ) {
-            $SYSMSG = "Attemping to get file(s) using connect string \"$hoststr\":\n $rmtFile \n";
-            showIfVerbose( $SYSMSG, 1 );
-            $retval = qx($scpHash->{BIN} -P $port $scpHash->{FLAGS} $hoststr:$rmtFile $localPath);
-        }
-        else {
-            print "HALT: scp not valid on localhost - does $scpHash->{BIN} exist?\n";
-            exit;
+    if ( $scpHash->{VALID} and -x $scpHash->{BIN} ) {
+        $SYSMSG = "Attemping to get file(s) using connect string \"$hoststr\":\n $rmtFile \n";
+        showIfVerbose( $SYSMSG, 1 );
+        my $exec = sprintf qq{%s -P %s %s %s:%s %s 2>&1}, $scpHash->BIN, $port, $scpHash->FLAGS, $hoststr, $rmtFile, $localPath;
+        $retval = qx/$exec/;
+        my $exit_code = $? >> 8;
+        if ( $exit_code != EXIT_SUCCESS ) {
+            printf "HALT: ssh command exited non-zero code ($exit_code)\n$retval";
+            exit $exit_code;
         }
     }
     else {
-        print "HALT: scp not valid on $SECURERUN->{localhost}\n";
-        exit;
+        printf qq{HALT: scp not valid or not executable on %s\n}, $SECURERUN->{localhost};
+        exit EXIT_ERROR;
     }
     showCallerInfo(caller);
     return $retval;
@@ -1056,28 +1038,23 @@ sub getViaSCP {
 sub putViaSCP {
     my ( $host, $user, $port, $localFile, $rmtPath ) = @_;
     my ( $retval, $usrstr );
-    my %scpHash = getInterpInfo( $SECURERUN->{localhost}, "SCP" );
-    my $scpHash = \%scpHash;
+    my $scpHash = getInterpInfo( $SECURERUN->{localhost}, "SCP" );
 
     # Create $hoststr, ie, user@host...
-    my $hoststr = '';
-    if ( $user !~ m/^$/ ) {
+    my $hoststr = $host;
+    if ($user) {
         $hoststr = "$user\@$host";
     }
-    else {
-        $hoststr = "$host";
-    }
 
-    # NEED TO GET STDOUT AND STDERR BACK - how?!
-    if ( $scpHash->{VALID} eq 1 ) {
-        if ( -x $scpHash->{BIN} ) {
-            $SYSMSG = "Attemping to put local file(s) to remote path $rmtPath using connect string \"$hoststr\":\n $localFile \n";
-            showIfVerbose( $SYSMSG, 1 );
-            $retval = qx($scpHash->{BIN} -P $port $scpHash->{FLAGS} $localFile $hoststr:$rmtPath);
-        }
-        else {
-            print "HALT: scp not valid on localhost - does $scpHash->{BIN} exist?\n";
-            exit;
+    if ( $scpHash->{VALID} eq 1 and -x $scpHash->{BIN} ) {
+        $SYSMSG = "Attemping to put local file(s) to remote path $rmtPath using connect string \"$hoststr\":\n $localFile \n";
+        showIfVerbose( $SYSMSG, 1 );
+        my $exec = sprintf qq{%s -P %s %s %s %s:%s 2>&1}, $scpHash->BIN, $port, $scpHash->FLAGS, $localFile, $hoststr, $rmtPath;
+        $retval = qx/$exec/;
+        my $exit_code = $? >> 8;
+        if ( $exit_code != EXIT_SUCCESS ) {
+            printf "HALT: ssh command exited non-zero code ($exit_code)\n$retval";
+            exit $exit_code;
         }
     }
     else {
@@ -1169,31 +1146,27 @@ sub putfileTagStart {
     if ( validateYesNo( $attributes->[0]{put}, 'YES' ) eq 'YES' ) {
         $PARSER->{PUTFILE_FLAG}        = 1;
         $PARSER->{PUTFILE_SKIP_PFILES} = 0;
-        if ( defined( $attributes->[0]{dir} ) ) {
-            $PUTFILE_ATTS->{dir} = qq($attributes->[0]{dir});
-            my $isLocal = isLocal( $PUTFILE_ATTS->{dir} );
+        if ( defined( $attributes->[0]{to} ) ) {
+            $PUTFILE_ATTS->{to} = qq($attributes->[0]{to});
+            my $isLocal = isLocal( $PUTFILE_ATTS->{to} );
             if ( $isLocal eq 1 ) {
-
-                # Store that it is local for entire <putfile> block
-                $PUTFILE_ATTS->{localOrRemote} = 'local';
-                $SYSMSG = "$PUTFILE_ATTS->{dir} is local and valid...\n";
+                $PUTFILE_ATTS->{localOrRemote} = 'local';                                         # Store that it is local for entire <putfile> block
+                $SYSMSG = "$PUTFILE_ATTS->{to} is local and valid...\n";
                 showIfVerbose( $SYSMSG, 2 );
             }
             elsif ( $isLocal eq 0 ) {
-
-                # Store that it is local for entire <putfile> block
-                $PUTFILE_ATTS->{localOrRemote} = 'remote';
-                $SYSMSG = "$PUTFILE_ATTS->{dir} is remote and valid...\n";
+                $PUTFILE_ATTS->{localOrRemote} = 'remote';                                         # Store that it is local for entire <putfile> block
+                $SYSMSG = "$PUTFILE_ATTS->{to} is remote and valid...\n";
                 showIfVerbose( $SYSMSG, 2 );
             }
             elsif ( $isLocal eq -1 ) {
-                print "HALT: $PUTFILE_ATTS->{dir} is not a valid file destination...\n";
-                exit;
+                print "HALT: $PUTFILE_ATTS->{to} is not a valid file destination...\n";
+                exit EXIT_ERROR;
             }
         }
         else {
             print "HALT: <putfile> destination directory not defined!...\n";
-            exit;
+            exit EXIT_ERROR;
         }
 
         # Wait attribute
@@ -1248,38 +1221,38 @@ sub pfileTagStart {
             # Only deal with if putting this file
             #require
             $PUTFILE_ATTS->{require} = validateYesNo( $attributes->[0]{require}, "YES" );
-            if ( defined( $attributes->[0]{file} ) ) {
-                $PUTFILE_ATTS->{file} = qq($attributes->[0]{file});
+            if ( $attributes->[0]{src} ) {
+                $PUTFILE_ATTS->{src} = $attributes->[0]{src};
             }
             else {
                 if ( $PUTFILE_ATTS->{require} eq 'YES' ) {
-                    print "HALT: file=\"\" attribute missing in required <pfile /> entry...\n";
-                    exit;
+                    print qq{HALT: 'src=""' attribute missing in required <pfile /> entry ...\n};
+                    exit EXIT_ERROR;
                 }
                 else {
-                    warn "WARNING: file=\"\" attribute missing in required file...<pfile /> skipped\n";
+                    warn qq{WARNING: 'file=""' attribute missing in required <pfile /> entry,  skipped\n};
                     $skip = 1;
                 }
             }
             if ( $skip eq 0 ) {
 
                 # Only deal with if $skip is set to 0
-                # newname
-                if ( defined( $attributes->[0]{newname} ) ) {
+                # as
+                if ( $attributes->[0]{as} ) {
 
                     # Should be file name only - not a dir path!
-                    $PUTFILE_ATTS->{newname} = qq($attributes->[0]{newname});
+                    $PUTFILE_ATTS->{as} = qq($attributes->[0]{as});
 
-                    # Validate newname if contained
-                    if ( $PUTFILE_ATTS->{newname} ne '' ) {
-                        if ( $PUTFILE_ATTS->{newname} =~ m/\// ) {
-                            warn "WARNING $PUTFILE_ATTS->{newname} appears to be a directory path and not a filename - $PUTFILE_ATTS->{file} will not be renamed...\n";
-                            $PUTFILE_ATTS->{newname} = '';
+                    # Validate as if contained
+                    if ( $PUTFILE_ATTS->{as} ne '' ) {
+                        if ( $PUTFILE_ATTS->{as} =~ m/\// ) {
+                            warn "WARNING $PUTFILE_ATTS->{as} appears to be a directory path and not a filename - $PUTFILE_ATTS->{src} will not be renamed...\n";
+                            $PUTFILE_ATTS->{as} = '';
                         }
                     }
                 }
                 else {
-                    $PUTFILE_ATTS->{newname} = '';
+                    $PUTFILE_ATTS->{as} = '';
                 }
 
                 # process? defaults to no
@@ -1303,16 +1276,15 @@ sub pfileTagStart {
 }
 
 # Called immediately after pfileTagStart, but does nothing right now
-
 sub pfileTagEnd {
     if ( $PARSER->{PUTFILE_SKIP_PFILES} eq 0 ) {
 
         # Reset $PUTFILE_ATTS
         $PUTFILE_ATTS->{put}     = '';
-        $PUTFILE_ATTS->{file}    = '';
+        $PUTFILE_ATTS->{src}     = '';
         $PUTFILE_ATTS->{require} = '';
         $PUTFILE_ATTS->{process} = '';
-        $PUTFILE_ATTS->{newname} = '';
+        $PUTFILE_ATTS->{as}      = '';
         $PUTFILE_ATTS->{keep}    = '';
         $PUTFILE_ATTS->{wait}    = '';
     }
@@ -1325,22 +1297,16 @@ sub pfileTagEnd {
 sub putFileManager {
 
     # Validate source file
-    if ( isLocal( $PUTFILE_ATTS->{file} ) eq 1 && $PUTFILE_ATTS->{localOrRemote} eq 'local' ) {
-
-        # Move local file to another local dir
-        putLocalToLocal();
+    if ( isLocal( $PUTFILE_ATTS->{src} ) && $PUTFILE_ATTS->{localOrRemote} eq 'local' ) {
+        putLocalToLocal();    # Move local file to another local dir
     }
-    elsif ( isLocal( $PUTFILE_ATTS->{file} ) eq 1 && $PUTFILE_ATTS->{localOrRemote} eq 'remote' ) {
-
-        # Move local file to remote dir
-        putLocalToRemote();
+    elsif ( isLocal( $PUTFILE_ATTS->{src} ) && $PUTFILE_ATTS->{localOrRemote} eq 'remote' ) {
+        putLocalToRemote();    # Move local file to remote dir
     }
-    elsif ( isRemote( $PUTFILE_ATTS->{file} ) eq 1 && $PUTFILE_ATTS->{localOrRemote} eq 'local' ) {
-
-        # Move a file from a remote host to local dir
-        putRemoteToLocal();
+    elsif ( isRemote( $PUTFILE_ATTS->{src} ) && $PUTFILE_ATTS->{localOrRemote} eq 'local' ) {
+        putRemoteToLocal();    # Move a file from a remote host to local dir
     }
-    elsif ( isRemote( $PUTFILE_ATTS->{file} ) eq 1 && $PUTFILE_ATTS->{localOrRemote} eq 'remote' ) {
+    elsif ( isRemote( $PUTFILE_ATTS->{src} ) && $PUTFILE_ATTS->{localOrRemote} eq 'remote' ) {
 
         # Move file on remote host 1 to dir on remote host 2
         # Currently inefficient - localhost used as "man in the middle"
@@ -1348,7 +1314,7 @@ sub putFileManager {
         putRemote1ToRemote2();
     }
     else {
-        print "HALT: Can not be determined if $PUTFILE_ATTS->{file} is local or remote...\n";
+        print "HALT: Can not be determined if $PUTFILE_ATTS->{src} is local or remote...\n";
         exit;
     }
     showCallerInfo(caller);
@@ -1358,38 +1324,35 @@ sub putFileManager {
 # copies src file to local dir - macro processing done after the move
 
 sub putLocalToLocal {
-    my %destinationHash = parseDirPath( $PUTFILE_ATTS->{dir} );
-    my $destinationHash = \%destinationHash;
-    my %srcFileHash     = parseDirPath( $PUTFILE_ATTS->{file} );
-    my $srcFileHash     = \%srcFileHash;
+    my $destHash    = parseDirPath( $PUTFILE_ATTS->{to} );
+    my $srcFileHash = parseDirPath( $PUTFILE_ATTS->{src} );
 
     # make sure src file exists
-    if ( isLocalFile( $srcFileHash->{PATH} ) eq 0 ) {
+    if ( not isLocalFile( $srcFileHash->{PATH} ) ) {
         if ( $PUTFILE_ATTS->{require} eq 'YES' ) {
             print "HALT: file \"$srcFileHash->{PATH}\" can not be found ...\n";
-            exit;
+            exit EXIT_ERROR;
         }
         else {
             warn "WARNING: \"$srcFileHash->{PATH}\" can not be found ...\n";
         }
     }
     else {
-
         # make sure destination directory is there
-        ensureLocalDir( $destinationHash->{PATH}, 0755 );
-        $destinationHash->{PATH} = Cwd::realpath( $destinationHash->{PATH} );
+        ensureLocalDir( $destHash->{PATH}, 0755 );
+        $destHash->{PATH} = Cwd::realpath( $destHash->{PATH} );
 
         # copy src file to local destination dir - check for new name
         my $newfiledestination = '';
-        if ( $PUTFILE_ATTS->{newname} ne '' ) {
-            $newfiledestination = "$destinationHash->{PATH}/$PUTFILE_ATTS->{newname}";
+        if ( $PUTFILE_ATTS->{as} ne '' ) {
+            $newfiledestination = "$destHash->{PATH}/$PUTFILE_ATTS->{as}";
         }
         else {
             my $filename = getLastPathMember( $srcFileHash->{PATH} );
-            $newfiledestination = "$destinationHash->{PATH}/$filename";
+            $newfiledestination = "$destHash->{PATH}/$filename";
         }
         prepForNewFile($newfiledestination);
-        copy( $srcFileHash->{PATH}, $newfiledestination ) || die "HALT: Error copying file...\n";
+        copy( $srcFileHash->{PATH}, $newfiledestination ) or die "HALT: Error copying file...\n";
 
         # Process macros in local file
         if ( $PUTFILE_ATTS->{process} eq 'YES' ) {
@@ -1405,10 +1368,8 @@ sub putLocalToLocal {
 }
 
 sub putLocalToRemote {
-    my %destinationHash    = parseDirPath( $PUTFILE_ATTS->{dir} );
-    my $destinationHash    = \%destinationHash;
-    my %srcFileHash        = parseDirPath( $PUTFILE_ATTS->{file} );
-    my $srcFileHash        = \%srcFileHash;
+    my $destHash           = parseDirPath( $PUTFILE_ATTS->{to} );
+    my $srcFileHash        = parseDirPath( $PUTFILE_ATTS->{src} );
     my $tmpfiledestination = '';
 
     # make sure src file exists
@@ -1424,7 +1385,7 @@ sub putLocalToRemote {
     else {
 
         # Send file to remote host
-        my $hostIPAddress = getIPAddress( $destinationHash->{HOST} );
+        my $hostIPAddress = getIPAddress( $destHash->{HOST} );
 
         # get host ip, verify
         if ( $hostIPAddress ne -1 ) {
@@ -1443,21 +1404,21 @@ sub putLocalToRemote {
                 $tmpSrcFile = $srcFileHash->{PATH};
             }
             my $destination = '';
-            if ( $PUTFILE_ATTS->{newname} ne '' ) {
+            if ( $PUTFILE_ATTS->{as} ne '' ) {
 
-                # send under guise of "newname"
-                $destination = "$destinationHash->{PATH}/$PUTFILE_ATTS->{newname}";
+                # send under guise of "as"
+                $destination = "$destHash->{PATH}/$PUTFILE_ATTS->{as}";
             }
             else {
 
                 # send as original file
                 my $filename = getLastPathMember( $srcFileHash->{PATH} );
-                $destination = "$destinationHash->{PATH}/$filename";
+                $destination = "$destHash->{PATH}/$filename";
             }
             my $scpout = putViaSCP(
                 $hostIPAddress,
-                $destinationHash->{USERNAME},
-                +$destinationHash->{PORT},
+                $destHash->{USERNAME},
+                +$destHash->{PORT},
                 $tmpSrcFile, $destination
             );
 
@@ -1470,7 +1431,7 @@ sub putLocalToRemote {
             }
         }
         else {
-            print "HALT: $destinationHash->{HOST} has no associated IP address in $SECURERUN->{h}\n";
+            print "HALT: $destHash->{HOST} has no associated IP address in $SECURERUN->{h}\n";
             exit;
         }
     }
@@ -1480,27 +1441,25 @@ sub putLocalToRemote {
 # copies a remote file to a local dir - macro processing done once it is on the local host
 
 sub putRemoteToLocal {
-    my %destinationHash = parseDirPath( $PUTFILE_ATTS->{dir} );
-    my $destinationHash = \%destinationHash;
-    my %srcFileHash     = parseDirPath( $PUTFILE_ATTS->{file} );
-    my $srcFileHash     = \%srcFileHash;
+    my $destHash    = parseDirPath( $PUTFILE_ATTS->{to} );
+    my $srcFileHash = parseDirPath( $PUTFILE_ATTS->{src} );
 
     # make sure destination directory is there
-    ensureLocalDir( $destinationHash->{PATH}, 0755 );
+    ensureLocalDir( $destHash->{PATH}, 0755 );
 
     # get absolute path
-    $destinationHash->{PATH} = Cwd::realpath( $destinationHash->{PATH} );
+    $destHash->{PATH} = Cwd::realpath( $destHash->{PATH} );
 
     # Get file from remote
     my $hostIPAddress = getIPAddress( $srcFileHash->{HOST} );
     if ( $hostIPAddress ne -1 ) {
         my $newfiledestination = '';
-        if ( $PUTFILE_ATTS->{newname} ne '' ) {
-            $newfiledestination = "$destinationHash->{PATH}/$PUTFILE_ATTS->{newname}";
+        if ( $PUTFILE_ATTS->{as} ne '' ) {
+            $newfiledestination = "$destHash->{PATH}/$PUTFILE_ATTS->{as}";
         }
         else {
             my $filename = getLastPathMember( $srcFileHash->{PATH} );
-            $newfiledestination = "$destinationHash->{PATH}/$filename";
+            $newfiledestination = "$destHash->{PATH}/$filename";
         }
         prepForNewFile($newfiledestination);
 
@@ -1528,7 +1487,7 @@ sub putRemoteToLocal {
         }
     }
     else {
-        print "HALT: $destinationHash->{HOST} has no associated IP address in $SECURERUN->{h}\n";
+        print "HALT: $destHash->{HOST} has no associated IP address in $SECURERUN->{h}\n";
         exit;
     }
     return;
@@ -1540,27 +1499,27 @@ sub putRemoteToLocal {
 sub putRemote1ToRemote2 {
 
     # Original
-    my $originalDir     = $PUTFILE_ATTS->{dir};
+    my $originalDir     = $PUTFILE_ATTS->{to};
     my $originalNewname = '';
-    if ( $PUTFILE_ATTS->{newname} eq '' ) {
-        $originalNewname = getLastPathMember( $PUTFILE_ATTS->{file} );
+    if ( $PUTFILE_ATTS->{as} eq '' ) {
+        $originalNewname = getLastPathMember( $PUTFILE_ATTS->{src} );
     }
     else {
-        $originalNewname = "$PUTFILE_ATTS->{newname}";
+        $originalNewname = "$PUTFILE_ATTS->{as}";
     }
 
     # Tmp for remote to local
     my $tmpNewName = getTmpName();
-    $PUTFILE_ATTS->{dir}     = $SECURERUN->{tmpdir};
-    $PUTFILE_ATTS->{newname} = $tmpNewName;
+    $PUTFILE_ATTS->{to} = $SECURERUN->{tmpdir};
+    $PUTFILE_ATTS->{as} = $tmpNewName;
 
     # Get from remote host 1 and put on local using tmp name
     putRemoteToLocal();
 
-    # Put local file on remote - restoring original or newname..
-    $PUTFILE_ATTS->{file}    = "$PUTFILE_ATTS->{dir}/$tmpNewName";
-    $PUTFILE_ATTS->{dir}     = "$originalDir";
-    $PUTFILE_ATTS->{newname} = "$originalNewname";
+    # Put local file on remote - restoring original or as..
+    $PUTFILE_ATTS->{src} = "$PUTFILE_ATTS->{to}/$tmpNewName";
+    $PUTFILE_ATTS->{to}  = "$originalDir";
+    $PUTFILE_ATTS->{as}  = "$originalNewname";
 
     # Be sure to not process macros twice
     $PUTFILE_ATTS->{process} = 'NO';
@@ -1569,7 +1528,7 @@ sub putRemote1ToRemote2 {
     putLocalToRemote();
 
     # Remove local tmp dir
-    unlink "$SECURERUN->{tmpdir}/$tmpNewName" || die $!;
+    unlink "$SECURERUN->{tmpdir}/$tmpNewName" or die $!;
     return;
 }
 
@@ -1679,8 +1638,7 @@ sub runFileManager {
 }
 
 sub runLocalFile {
-    my %srcFileHash = parseDirPath( $RUNFILE_ATTS->{file} );
-    my $srcFileHash = \%srcFileHash;
+    my $srcFileHash = parseDirPath( $RUNFILE_ATTS->{file} );
 
     # ensure local file exists, if not warn or die
     if ( isLocalFile( $srcFileHash->{PATH} ) eq 1 ) {
@@ -1713,8 +1671,7 @@ sub runLocalFile {
         $srcFileHash->{PATH} = $newfile;
 
         # get interp info
-        my %interpHash = getInterpInfo( $SECURERUN->{localhost}, $RUNFILE_ATTS->{interp} );
-        my $interpHash = \%interpHash;
+        my $interpHash = getInterpInfo( $SECURERUN->{localhost}, $RUNFILE_ATTS->{interp} );
 
         # validate interpretor
         if ( isValidInterp( $RUNFILE_ATTS->{interp}, $RUNFILE_ATTS->{file} ) ne 1 ) {
@@ -1739,7 +1696,13 @@ sub runLocalFile {
                 $SYSMSG = "WARNING: $file is not executable\n";
                 showIfVerbose( $SYSMSG, 1 );
             }
-            $SYSMSG = qx($cmd);
+
+            $SYSMSG = qx/$cmd/;
+            my $exit_code = $? >> 8;
+            if ( $exit_code != EXIT_SUCCESS ) {
+                printf "HALT: local command exited non-zero code ($exit_code)\n$SYSMSG";
+                exit $exit_code;
+            }
 
             # capture STDOUT
             if ( $RUNFILE_ATTS->{name} ne 'STDOUT' ) {
@@ -1763,7 +1726,7 @@ sub runLocalFile {
     }
     elsif ( $RUNFILE_ATTS->{require} eq 'YES' ) {
         print "HALT: Local $srcFileHash->{PATH} file not found...\n";
-        exit 1;
+        exit EXIT_ERROR;
     }
     elsif ( $RUNFILE_ATTS->{require} eq 'NO' ) {
         warn "WARN: Local $srcFileHash->{PATH} file not found...\n";
@@ -1773,16 +1736,14 @@ sub runLocalFile {
 }
 
 sub runRemoteFile {
-    my %srcFileHash   = parseDirPath( $RUNFILE_ATTS->{file} );
-    my $srcFileHash   = \%srcFileHash;
+    my $srcFileHash   = parseDirPath( $RUNFILE_ATTS->{file} );
     my $hostIPAddress = getIPAddress( $srcFileHash->{HOST} );
 
     # get host ip, verify
     if ( $hostIPAddress ne -1 ) {
 
         # get interp info
-        my %interpHash = getInterpInfo( $SECURERUN->{localhost}, $RUNFILE_ATTS->{interp} );
-        my $interpHash = \%interpHash;
+        my $interpHash = getInterpInfo( $SECURERUN->{localhost}, $RUNFILE_ATTS->{interp} );
 
         # validate interpretor
         if ( isValidInterp( $RUNFILE_ATTS->{interp}, $RUNFILE_ATTS->{file} ) ne 1 ) {
@@ -1811,7 +1772,7 @@ sub runRemoteFile {
                 addToExtraOps( $RUNFILE_ATTS->{name}, $SYSMSG );
                 addToExtraOps( 'STDOUT',              $SYSMSG );
 
-                # hided named STDOUTs until verbost level 2
+                # hide named STDOUTs until verbost level 2
                 showIfVerbose( $SYSMSG, 2 );
             }
             else {
@@ -1871,8 +1832,7 @@ sub scriptTagStart {
 sub scriptTagCode {
     my ($commentText) = $_[0];
     if ( $PARSER->{SCRIPT_FLAG} eq 1 ) {
-        my %srcFileHash = parseDirPath( $RUNFILE_ATTS->{file} );
-        my $srcFileHash = \%srcFileHash;
+        my $srcFileHash = parseDirPath( $RUNFILE_ATTS->{file} );
         my $isLocal     = isLocal( $RUNFILE_ATTS->{file} );
         my $filename    = getLastPathMember( $srcFileHash->{PATH} );
         my $dir         = getParentPath( $srcFileHash->{PATH} );
@@ -1895,11 +1855,11 @@ sub scriptTagCode {
             my $tmpname = getTmpName();
             $outfile = sprintf qq{%s/%s}, $SECURERUN->{tmpdir}, $tmpname;
             writeScriptFile( $commentText, $outfile );
-            $PUTFILE_ATTS->{dir}     = "$srcFileHash->{USERNAME}\@$srcFileHash->{HOST}#$srcFileHash->{PORT}:$dir";
-            $PUTFILE_ATTS->{file}    = $outfile;
+            $PUTFILE_ATTS->{to}      = "$srcFileHash->{USERNAME}\@$srcFileHash->{HOST}#$srcFileHash->{PORT}:$dir";
+            $PUTFILE_ATTS->{src}     = $outfile;
             $PUTFILE_ATTS->{require} = $RUNFILE_ATTS->{require};
             $PUTFILE_ATTS->{process} = $RUNFILE_ATTS->{process};
-            $PUTFILE_ATTS->{newname} = $filename;
+            $PUTFILE_ATTS->{as}      = $filename;
             $PUTFILE_ATTS->{keep}    = "NO";
 
             # send file
@@ -1917,9 +1877,6 @@ sub scriptTagCode {
         if ( $SCRIPT_ATTS->{keep} eq 'NO' ) {
             push @$filesToRemove, $outfile;
         }
-    }
-    else {
-
     }
     showCallerInfo(caller);
     return;
@@ -2026,20 +1983,19 @@ sub undefineTagEnd {
 sub chbasedirTagStart {
     my (@attributes) = $_[0];
     my ($attributes) = \@attributes;
-    if ( exists( $attributes->[0]{dir} ) ) {
+    if ( $attributes->[0]{to} ) {
+        my $to = preProcessStr( $attributes->[0]{to}, $extraOps );
 
         # if relative path, it is relative to current basedir
-        ensureLocalDir( qq($attributes->[0]{dir}), 0755 );
-        $SECURERUN->{BASEDIR} = Cwd::realpath(qq($attributes->[0]{dir}));
+        ensureLocalDir( $to, 0755 );
+        $SECURERUN->{BASEDIR} = Cwd::realpath($to);
         addToExtraOps( 'BASEDIR', $SECURERUN->{BASEDIR} );
         cdCwdToBASEDIR();
+        showIfVerbose( $SYSMSG, 1 );
+        return;
     }
-    else {
-        print "HALT: dir attribute for <chbasedir/> not specified\n";
-        exit;
-    }
-    showIfVerbose( $SYSMSG, 1 );
-    return;
+    print "HALT: dir attribute for <chbasedir/> not specified\n";
+    exit EXIT_ERROR;
 }
 
 sub chbasedirTagEnd {
@@ -2184,8 +2140,19 @@ sub onText {
 sub onComment {
     my ($commentText) = @_;
     if ( $SECURERUN->showcomments ) {
-        chomp $commentText;
-        print "$commentText\n";
+        my $processedComment = preProcessStr( $commentText, $extraOps );
+        my @lines            = split /\n/, $processedComment;
+        my @to_print         = ();
+        foreach my $l (@lines) {
+            $l =~ s/^ +<!--/<!--/;
+            $l =~ s/^ +-->/-->/;
+            if ( $l !~ m/^<!--|-->/ ) {
+                $l = qq{  $l};    # shift over to the right 2 spaces for better reading with --showcomments
+            }
+            push @to_print, $l;
+        }
+        push @to_print, q{};
+        print join( qq{\n}, @to_print );
     }
     showCallerInfo(caller);
     return;
