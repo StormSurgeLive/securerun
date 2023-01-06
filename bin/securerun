@@ -12,7 +12,7 @@ use File::Copy;                             # used in copying
 use File::Path;                             # used in making dirs
 use Cwd;                                    # to get current working directory
 use YAML;                                   # get $HOME/securerun.conf
-use Util::H2O::More qw/h2o d2o opt2h2o/;    # ez inline objects
+use Util::H2O::More qw/h2o opt2h2o/;    # ez inline objects
 $|++;                                       # turn off buffering
 
 require Data::Dumper;
@@ -244,13 +244,7 @@ sub init {
     setLocalhost();
     addToExtraOps( 'localhost', $SECURERUN->{localhost} );
 
-    # untested xp solution to getting interactive input on windows.
-    if ( $^O eq 'MSWin32' ) {
-        open( TTY, "CON" ) or die $!;
-    }
-    else {
-        open( TTY, "</dev/tty" ) or die $!;
-    }
+    open( TTY, "</dev/tty" ) or die $!;
 
     showCallerInfo(caller);
     return;
@@ -391,21 +385,6 @@ sub getFirstLineFromFile {
 #  subrouting to handle it.
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-sub processPrefs {
-    my $prefs = $SECURERUN->{PREFS};
-    $prefs =~ s/\n|\s|\r//g;
-    my @prefsArray = split( ';', $prefs );
-    for ( my $i = 0; $i < scalar(@prefsArray); $i++ ) {
-        $prefsArray[$i] =~ s/-/pref_/g;
-        my @subname = split( ':', $prefsArray[$i] );
-        $prefsArray[$i] =~ s/:/('/g;
-        $prefsArray[$i] =~ s/$/')/g;
-        eval "$prefsArray[$i]";
-    }
-    showCallerInfo(caller);
-    return;
-}
-
 sub pref_create_dirs {
     my ($level) = @_;
     if ( $level =~ m/[01]/ ) {
@@ -419,7 +398,7 @@ sub pref_create_dirs {
 
 sub pref_verbose_level {
     my ($level) = @_;
-    if ( $level =~ m/[0124]/ ) {
+    if ( $level =~ m/[\d]+/ ) {
         $SECURERUN->{v} = $level;
     }
     $SYSMSG = "SET: on_verbose_level to $level\n";
@@ -428,10 +407,28 @@ sub pref_verbose_level {
     return;
 }
 
-# example added sub ...
-#sub on_test {
-#  print "CALLED: on_test @_ \n";
-#}
+sub processPrefs {
+    my $prefs = $SECURERUN->{PREFS};
+    $prefs =~ s/\n|\s|\r//g;
+    ## register any new internal XML prefs here
+    my $set_pref = {
+      q{-create_dirs}   => sub { pref_create_dirs(@_)   },
+      q{-verbose_level} => sub { pref_verbose_level(@_) },
+    };
+    my @prefsArray = split( ';', $prefs );
+    foreach my $pref (@prefsArray) {
+        my ($pref, $value) = split /:/, $pref;
+	if (q{CODE} eq ref $set_pref->{$pref}) {
+	  $set_pref->{$pref}->($value)
+	}
+	else {
+          $SYSMSG = sprintf qq{WARNING: '%s' is not a valid preference in opening <securerun prefs="...\nValid: %s\n}, $pref, join(q{, }, keys %$set_pref);
+          showIfVerbose( $SYSMSG, 0 );
+	}
+    }
+    showCallerInfo(caller);
+    return;
+}
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Logging and messaging functions

@@ -2,7 +2,7 @@
 <securerun
   name="ASGS-upload-results" 
   basedir="./scratchdir%PROCID%" 
-  prefs="-create_dirs:1;">
+  prefs="-create_dirs:1;-foo:1">
 
   <!-- pid %PROCID%: initial macros to define -->
   <define name="USER"        value="%u%">
